@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jacks or Better - Video Poker</title>
     <style>
         * {
@@ -204,10 +204,28 @@
             position: relative;
             cursor: pointer;
             transition: transform 0.2s;
+            /* Reset button styles */
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            color: inherit;
+            outline: none;
+        }
+
+        .card-slot:focus-visible {
+            outline: 3px solid var(--gold);
+            outline-offset: 4px;
+            border-radius: 12px;
         }
 
         .card-slot:active {
             transform: scale(0.95);
+        }
+
+        .card-slot:disabled {
+            cursor: default;
+            opacity: 0.7;
         }
 
         .card {
@@ -690,27 +708,27 @@
         <div class="win-message" id="win-message"></div>
 
         <!-- Cards -->
-        <div class="cards-container" id="cards-container">
-            <div class="card-slot" data-index="0">
+        <div class="cards-container" id="cards-container" role="group" aria-label="Your hand - 5 cards">
+            <button class="card-slot" data-index="0" type="button" role="switch" aria-pressed="false" aria-label="Card 1 - tap to hold" tabindex="0">
                 <div class="card face-down"></div>
-                <div class="hold-badge">HOLD</div>
-            </div>
-            <div class="card-slot" data-index="1">
+                <div class="hold-badge" aria-hidden="true">HOLD</div>
+            </button>
+            <button class="card-slot" data-index="1" type="button" role="switch" aria-pressed="false" aria-label="Card 2 - tap to hold" tabindex="0">
                 <div class="card face-down"></div>
-                <div class="hold-badge">HOLD</div>
-            </div>
-            <div class="card-slot" data-index="2">
+                <div class="hold-badge" aria-hidden="true">HOLD</div>
+            </button>
+            <button class="card-slot" data-index="2" type="button" role="switch" aria-pressed="false" aria-label="Card 3 - tap to hold" tabindex="0">
                 <div class="card face-down"></div>
-                <div class="hold-badge">HOLD</div>
-            </div>
-            <div class="card-slot" data-index="3">
+                <div class="hold-badge" aria-hidden="true">HOLD</div>
+            </button>
+            <button class="card-slot" data-index="3" type="button" role="switch" aria-pressed="false" aria-label="Card 4 - tap to hold" tabindex="0">
                 <div class="card face-down"></div>
-                <div class="hold-badge">HOLD</div>
-            </div>
-            <div class="card-slot" data-index="4">
+                <div class="hold-badge" aria-hidden="true">HOLD</div>
+            </button>
+            <button class="card-slot" data-index="4" type="button" role="switch" aria-pressed="false" aria-label="Card 5 - tap to hold" tabindex="0">
                 <div class="card face-down"></div>
-                <div class="hold-badge">HOLD</div>
-            </div>
+                <div class="hold-badge" aria-hidden="true">HOLD</div>
+            </button>
         </div>
 
         <!-- Controls -->
@@ -983,10 +1001,18 @@
             slots.forEach((slot, index) => {
                 const cardEl = slot.querySelector('.card');
                 const holdBadge = slot.querySelector('.hold-badge');
+                const card = gameState.hand[index];
 
-                if (gameState.hand[index]) {
+                if (card) {
                     const shouldAnimate = animateIndices.includes(index);
-                    renderCard(gameState.hand[index], cardEl, shouldAnimate);
+                    renderCard(card, cardEl, shouldAnimate);
+
+                    // Update ARIA attributes
+                    const cardName = `${card.rank} of ${card.suit}`;
+                    const heldState = gameState.held[index] ? 'held' : 'not held';
+                    slot.setAttribute('aria-label', `Card ${index + 1}: ${cardName} - ${heldState}`);
+                    slot.setAttribute('aria-pressed', gameState.held[index].toString());
+                    slot.disabled = gameState.phase !== 'holding';
 
                     if (gameState.held[index]) {
                         cardEl.classList.add('held');
@@ -999,6 +1025,9 @@
                     cardEl.className = 'card face-down';
                     cardEl.innerHTML = '';
                     holdBadge.classList.remove('visible');
+                    slot.setAttribute('aria-label', `Card ${index + 1} - face down`);
+                    slot.setAttribute('aria-pressed', 'false');
+                    slot.disabled = true;
                 }
             });
         }
@@ -1030,8 +1059,19 @@
             const betControls = document.getElementById('bet-controls');
 
             if (gameState.phase === 'betting') {
+                // Auto-adjust bet if credits are too low
+                if (gameState.credits > 0 && gameState.credits < gameState.bet) {
+                    gameState.bet = Math.min(gameState.bet, gameState.credits);
+                }
+
                 dealBtn.textContent = 'DEAL';
-                dealBtn.disabled = gameState.credits < gameState.bet;
+                // Show game over if completely out of credits
+                if (gameState.credits <= 0) {
+                    dealBtn.disabled = true;
+                    setTimeout(showGameOver, 100);
+                } else {
+                    dealBtn.disabled = false;
+                }
                 betControls.style.display = 'flex';
             } else if (gameState.phase === 'holding') {
                 dealBtn.textContent = 'DRAW';
@@ -1043,10 +1083,11 @@
                 betControls.style.display = 'none';
             }
 
-            // Update bet buttons
+            // Update bet buttons - can't bet more than current credits
+            const maxBetAllowed = Math.min(5, gameState.credits);
             document.getElementById('btn-bet-down').disabled = gameState.bet <= 1 || gameState.phase !== 'betting';
-            document.getElementById('btn-bet-up').disabled = gameState.bet >= 5 || gameState.phase !== 'betting';
-            document.getElementById('btn-bet-max').disabled = gameState.phase !== 'betting';
+            document.getElementById('btn-bet-up').disabled = gameState.bet >= maxBetAllowed || gameState.phase !== 'betting';
+            document.getElementById('btn-bet-max').disabled = gameState.phase !== 'betting' || gameState.credits <= 0;
         }
 
         function renderStats() {
@@ -1166,14 +1207,15 @@
 
         function adjustBet(delta) {
             if (gameState.phase !== 'betting') return;
-            gameState.bet = Math.max(1, Math.min(5, gameState.bet + delta));
+            const maxAllowed = Math.min(5, gameState.credits);
+            gameState.bet = Math.max(1, Math.min(maxAllowed, gameState.bet + delta));
             render();
             saveGame();
         }
 
         function maxBet() {
             if (gameState.phase !== 'betting') return;
-            gameState.bet = 5;
+            gameState.bet = Math.min(5, gameState.credits);
             render();
             saveGame();
         }
@@ -1207,10 +1249,35 @@
         // ============================================
         // PERSISTENCE
         // ============================================
+        const MAX_HISTORY_SIZE = 1000; // Cap history to prevent localStorage quota issues
+
         function saveGame() {
-            localStorage.setItem('videoPokerState', JSON.stringify(gameState));
-            localStorage.setItem('videoPokerStats', JSON.stringify(stats));
-            localStorage.setItem('videoPokerHistory', JSON.stringify(handHistory));
+            try {
+                // Cap history size to prevent unbounded growth
+                if (handHistory.length > MAX_HISTORY_SIZE) {
+                    handHistory = handHistory.slice(-MAX_HISTORY_SIZE);
+                }
+
+                localStorage.setItem('videoPokerState', JSON.stringify(gameState));
+                localStorage.setItem('videoPokerStats', JSON.stringify(stats));
+                localStorage.setItem('videoPokerHistory', JSON.stringify(handHistory));
+            } catch (e) {
+                // Handle quota exceeded or other storage errors
+                if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                    console.warn('localStorage quota exceeded, trimming history...');
+                    // Trim history more aggressively and retry
+                    handHistory = handHistory.slice(-100);
+                    try {
+                        localStorage.setItem('videoPokerHistory', JSON.stringify(handHistory));
+                    } catch (e2) {
+                        // If still failing, clear history entirely
+                        handHistory = [];
+                        console.error('Could not save history, clearing it.');
+                    }
+                } else {
+                    console.error('Error saving game:', e);
+                }
+            }
         }
 
         function loadGame() {
